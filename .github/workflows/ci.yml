@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ── Version consistency check ─────────────────────────────────────────────
+  # Ensures lib.rs and README.md always match the version in Cargo.toml.
+  # This catches the class of error where Cargo.toml is bumped but doc
+  # strings are left stale. Fails the pipeline before any code runs.
+  version-check:
+    name: Version consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Check version strings match Cargo.toml
+        run: |
+          VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          echo "Cargo.toml version: $VERSION"
+
+          if ! grep -q "PQC Vault v${VERSION}" src/lib.rs; then
+            echo "ERROR: lib.rs does not contain '# PQC Vault v${VERSION}'"
+            echo "  Update the top-level doc comment in src/lib.rs to match Cargo.toml"
+            exit 1
+          fi
+
+          if ! grep -q "PQC Vault v${VERSION}" README.md; then
+            echo "ERROR: README.md does not contain 'PQC Vault v${VERSION}'"
+            echo "  Update the README.md header to match Cargo.toml"
+            exit 1
+          fi
+
+          echo "OK: lib.rs and README.md both reference v${VERSION}"
+
+  # ── Tests ─────────────────────────────────────────────────────────────────
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: version-check
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203 # stable 2024-11-01
+        with:
+          toolchain: stable
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@82a92a6e8fbeee089604da2575dc567ae9ddeaab # v2.7.5
+      - name: Build
+        run: cargo build --verbose
+      - name: Run tests
+        run: cargo test --verbose
+
+  # ── Clippy ────────────────────────────────────────────────────────────────
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    needs: version-check
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install Rust stable + clippy
+        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203 # stable 2024-11-01
+        with:
+          toolchain: stable
+          components: clippy
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@82a92a6e8fbeee089604da2575dc567ae9ddeaab # v2.7.5
+      - name: Run clippy (warnings as errors)
+        run: cargo clippy -- -D warnings
+
+  # ── Formatting ────────────────────────────────────────────────────────────
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install Rust stable + rustfmt
+        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203 # stable 2024-11-01
+        with:
+          toolchain: stable
+          components: rustfmt
+      - name: Check formatting
+        run: cargo fmt --check
+
+  # ── Benchmarks compile ────────────────────────────────────────────────────
+  # Criterion is in [dev-dependencies] — no runtime cargo add needed.
+  # This job ensures the benchmark file never silently breaks after an API change.
+  bench-compile:
+    name: Benchmarks compile
+    runs-on: ubuntu-latest
+    needs: version-check
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203 # stable 2024-11-01
+        with:
+          toolchain: stable
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@82a92a6e8fbeee089604da2575dc567ae9ddeaab # v2.7.5
+      - name: Check benchmarks compile
+        run: cargo build --benches --verbose

@@ -1,0 +1,29 @@
+[package]
+name = "pqc_vault"
+version = "0.6.0"
+edition = "2021"
+authors = ["PQC Vault Contributors"]
+description = "Post-quantum cryptography API — ML-KEM (Kyber) + ML-DSA (Dilithium) — NIST FIPS 203/204"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+
+[dependencies]
+pqcrypto-kyber     = "0.7.6"
+pqcrypto-dilithium = "0.4.6"
+pqcrypto-traits    = "0.3.4"
+subtle             = "2.5"
+zeroize            = { version = "1.7", features = ["derive"] }
+hex                = "0.4"
+
+[dev-dependencies]
+criterion = { version = "0.4", features = ["html_reports"] }
+
+[[bench]]
+name = "pqc_benchmarks"
+harness = false
+
+[profile.release]
+opt-level     = 3
+lto           = true
+codegen-units = 1
+panic         = "abort"
