@@ -47,9 +47,9 @@
 
 #![warn(clippy::all)]
 
-pub mod kem;
 pub mod dsa;
 pub mod error;
+pub mod kem;
 pub mod utils;
 
 pub use error::{PqcError, Result};

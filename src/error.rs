@@ -33,16 +33,16 @@ pub enum PqcError {
 impl fmt::Display for PqcError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            PqcError::KeyGenerationFailed    => write!(f, "Key generation failed"),
-            PqcError::EncapsulationFailed    => write!(f, "Encapsulation failed"),
-            PqcError::DecapsulationFailed    => write!(f, "Decapsulation failed"),
-            PqcError::SigningFailed          => write!(f, "Signing failed"),
-            PqcError::VerificationFailed     => write!(f, "Signature verification failed"),
-            PqcError::InvalidKey(m)          => write!(f, "Invalid key: {}", m),
-            PqcError::InvalidCiphertext(m)   => write!(f, "Invalid ciphertext: {}", m),
-            PqcError::InvalidSignature(m)    => write!(f, "Invalid signature: {}", m),
-            PqcError::HexDecodeError(m)      => write!(f, "Hex decode error: {}", m),
-            PqcError::Other(m)               => write!(f, "Error: {}", m),
+            PqcError::KeyGenerationFailed => write!(f, "Key generation failed"),
+            PqcError::EncapsulationFailed => write!(f, "Encapsulation failed"),
+            PqcError::DecapsulationFailed => write!(f, "Decapsulation failed"),
+            PqcError::SigningFailed => write!(f, "Signing failed"),
+            PqcError::VerificationFailed => write!(f, "Signature verification failed"),
+            PqcError::InvalidKey(m) => write!(f, "Invalid key: {}", m),
+            PqcError::InvalidCiphertext(m) => write!(f, "Invalid ciphertext: {}", m),
+            PqcError::InvalidSignature(m) => write!(f, "Invalid signature: {}", m),
+            PqcError::HexDecodeError(m) => write!(f, "Hex decode error: {}", m),
+            PqcError::Other(m) => write!(f, "Error: {}", m),
         }
     }
 }

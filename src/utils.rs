@@ -38,7 +38,9 @@ pub fn from_hex(s: &str) -> Result<Vec<u8>> {
 /// The comparison time is proportional to the length of the slices,
 /// not to how many bytes differ.
 pub fn ct_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() { return false; }
+    if a.len() != b.len() {
+        return false;
+    }
     bool::from(a.ct_eq(b))
 }
 
