@@ -1,6 +1,6 @@
 [package]
 name = "pqc_vault"
-version = "0.6.0"
+version = "0.9.0"
 edition = "2021"
 authors = ["PQC Vault Contributors"]
 description = "Post-quantum cryptography API — ML-KEM (Kyber) + ML-DSA (Dilithium) — NIST FIPS 203/204"
@@ -14,6 +14,15 @@ pqcrypto-traits    = "0.3.4"
 subtle             = "2.5"
 zeroize            = { version = "1.7", features = ["derive"] }
 hex                = "0.4"
+aes-gcm            = "0.10"
+base64             = "0.21"
+x25519-dalek       = { version = "2.0", features = ["static_secrets"] }
+rand               = { version = "0.8", features = ["getrandom"] }
+argon2             = "=0.4.0"
+sha2               = "0.10"
+hkdf               = "0.12"
+serde              = { version = "1", features = ["derive"] }
+serde_json         = "1"
 
 [dev-dependencies]
 criterion = { version = "0.4", features = ["html_reports"] }
