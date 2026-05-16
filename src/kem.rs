@@ -413,3 +413,68 @@ mod tests {
         drop(ss); // Zeroizing wipes here
     }
 }
+
+// ── Serialisation support ─────────────────────────────────────────────────────
+
+impl KemKeyPair {
+    /// Export the key pair as raw bytes wrapped in `KemKeyData`.
+    /// Use `EncryptedKeyBundle::seal_kem()` to persist securely to disk.
+    pub fn export(&self) -> crate::Result<crate::serial::KemKeyData> {
+        Ok(crate::serial::KemKeyData {
+            level: self.inner.level,
+            public_key: self.inner.pk_bytes.clone(),
+            secret_key: self.inner.sk_bytes.clone(),
+        })
+    }
+
+    /// Restore a key pair from raw exported bytes.
+    /// Validates that the key lengths match the expected sizes for the level.
+    pub fn from_bytes(
+        level: SecurityLevel,
+        pk_bytes: &[u8],
+        sk_bytes: &[u8],
+    ) -> crate::Result<Self> {
+        use pqcrypto_traits::kem::{PublicKey, SecretKey};
+        // Validate by parsing through pqcrypto — wrong sizes return an error
+        match level {
+            SecurityLevel::Level1 => {
+                kyber512::PublicKey::from_bytes(pk_bytes).map_err(|_| {
+                    crate::error::PqcError::InvalidKey("Invalid Kyber512 public key length".into())
+                })?;
+                kyber512::SecretKey::from_bytes(sk_bytes).map_err(|_| {
+                    crate::error::PqcError::InvalidKey("Invalid Kyber512 secret key length".into())
+                })?;
+            }
+            SecurityLevel::Level3 => {
+                kyber768::PublicKey::from_bytes(pk_bytes).map_err(|_| {
+                    crate::error::PqcError::InvalidKey("Invalid Kyber768 public key length".into())
+                })?;
+                kyber768::SecretKey::from_bytes(sk_bytes).map_err(|_| {
+                    crate::error::PqcError::InvalidKey("Invalid Kyber768 secret key length".into())
+                })?;
+            }
+            SecurityLevel::Level5 => {
+                kyber1024::PublicKey::from_bytes(pk_bytes).map_err(|_| {
+                    crate::error::PqcError::InvalidKey("Invalid Kyber1024 public key length".into())
+                })?;
+                kyber1024::SecretKey::from_bytes(sk_bytes).map_err(|_| {
+                    crate::error::PqcError::InvalidKey("Invalid Kyber1024 secret key length".into())
+                })?;
+            }
+        }
+        Ok(KemKeyPair {
+            inner: KemInner {
+                level,
+                pk_bytes: pk_bytes.to_vec(),
+                sk_bytes: Zeroizing::new(sk_bytes.to_vec()),
+            },
+        })
+    }
+}
+
+impl KemPublicKey {
+    /// Construct from raw bytes and level — used by PEM/serialisation layer.
+    pub fn from_raw(level: SecurityLevel, bytes: Vec<u8>) -> Self {
+        KemPublicKey { level, bytes }
+    }
+}
