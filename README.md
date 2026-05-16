@@ -106,20 +106,3 @@ cargo bench
 
 Six review cycles against an independent auditor. Score progression: 54, 74, 84, 88, 93, 95. All critical and high-severity findings from the first audit are resolved. The remaining open items are the vector KAT gap above and the independent audit required before any production deployment.
 
-## Changelog
-
-**v0.6.0** — Corrected lib.rs changelog: v0.3.0 and v0.4.0 entries were swapped.
-
-**v0.5.0** — Version strings in lib.rs and README verified by CI on every push. criterion moved to dev-dependencies. CI action references pinned to commit SHAs. README test count corrected.
-
-**v0.4.0** — SharedSecretKey::len() removed. CI pipeline added: test, clippy, fmt, bench-compile. Upstream KAT issue filed.
-
-**v0.3.0** — Transient plaintext window eliminated. SharedSecretKey newtype with constant-time PartialEq. Key persistence guidance added. Test modules renamed to size_tests.
-
-**v0.2.0** — Zeroizing applied to all private key storage. decapsulate() and sign() return Zeroizing. Broken secure_zero() removed. Typed KemPublicKey and DsaPublicKey. key_info() removed. README corrected on NIST provenance.
-
-**v0.1.0** — Initial release.
-
-## License
-
-MIT OR Apache-2.0
