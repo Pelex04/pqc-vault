@@ -1,4 +1,4 @@
-<!-- PQC Vault v0.6.0 -->
+<!-- PQC Vault v0.9.0 -->
 # pqc-vault
 
 Rust API layer over post-quantum cryptographic primitives. Implements ML-KEM (NIST FIPS 203) for key encapsulation and ML-DSA (NIST FIPS 204) for digital signatures.
@@ -84,7 +84,7 @@ If your application needs persistent keys, the options in order of preference ar
 cargo test
 ```
 
-31 tests cover round-trip correctness at all three security levels for both KEM and DSA, output size validation against the FIPS 203 and FIPS 204 specifications, tampered message rejection, wrong key rejection, empty and large messages, and type-level verification that sensitive return values are `Zeroizing`.
+50 tests cover round-trip correctness at all three security levels for both KEM and DSA, output size validation against the FIPS 203 and FIPS 204 specifications, tampered message rejection, wrong key rejection, empty and large messages, and type-level verification that sensitive return values are `Zeroizing`.
 
 The FIPS size tests confirm that output byte lengths match the specifications. They are not deterministic vector KATs — they cannot verify that output values match NIST-published test vectors. True vector KATs require deterministic seeding, which the underlying `pqcrypto` crates do not currently expose. An upstream issue has been filed. Until it is resolved, value-level compliance with NIST test vectors is untested.
 
