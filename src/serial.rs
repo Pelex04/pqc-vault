@@ -1,8 +1,7 @@
 //! Key serialisation — export and import key material securely.
 //!
-//! Raw key bytes can be exported and later restored. When persisting to disk,
-//! use `EncryptedKeyBundle` which wraps keys in AES-256-GCM authenticated
-//! encryption with a key derived from a passphrase via Argon2id.
+//! Use `EncryptedKeyBundle` to persist key pairs to disk. Keys are encrypted
+//! with AES-256-GCM using a key derived from a passphrase via Argon2id.
 //!
 //! # Quick start
 //!
@@ -12,11 +11,9 @@
 //!
 //! let kp = KemKeyPair::generate(SecurityLevel::Level3).unwrap();
 //!
-//! // Encrypt and serialise to JSON
 //! let bundle = EncryptedKeyBundle::seal_kem(&kp, b"strong-passphrase").unwrap();
 //! let json = bundle.to_json();
 //!
-//! // Later: restore
 //! let bundle2 = EncryptedKeyBundle::from_json(&json).unwrap();
 //! let restored = bundle2.unseal_kem(b"strong-passphrase").unwrap();
 //! ```
@@ -38,28 +35,55 @@ use zeroize::Zeroizing;
 
 // ── Raw key export ────────────────────────────────────────────────────────────
 
-/// Exported bytes of a KEM key pair. Secret key is Zeroizing — wiped on drop.
+/// Exported bytes of a KEM key pair.
+///
+/// The secret key field is private — access via `into_keypair()` only.
+/// This prevents callers from accidentally logging or transmitting secret bytes.
 pub struct KemKeyData {
     pub level: SecurityLevel,
     pub public_key: Vec<u8>,
-    pub secret_key: Zeroizing<Vec<u8>>,
+    secret_key: Zeroizing<Vec<u8>>,
 }
 
 impl KemKeyData {
+    pub(crate) fn new(
+        level: SecurityLevel,
+        public_key: Vec<u8>,
+        secret_key: Zeroizing<Vec<u8>>,
+    ) -> Self {
+        Self {
+            level,
+            public_key,
+            secret_key,
+        }
+    }
     /// Restore a `KemKeyPair` from exported key data.
     pub fn into_keypair(self) -> Result<KemKeyPair> {
         KemKeyPair::from_bytes(self.level, &self.public_key, &self.secret_key)
     }
 }
 
-/// Exported bytes of a DSA key pair. Secret key is Zeroizing — wiped on drop.
+/// Exported bytes of a DSA key pair.
+///
+/// The secret key field is private — access via `into_keypair()` only.
 pub struct DsaKeyData {
     pub level: SecurityLevel,
     pub public_key: Vec<u8>,
-    pub secret_key: Zeroizing<Vec<u8>>,
+    secret_key: Zeroizing<Vec<u8>>,
 }
 
 impl DsaKeyData {
+    pub(crate) fn new(
+        level: SecurityLevel,
+        public_key: Vec<u8>,
+        secret_key: Zeroizing<Vec<u8>>,
+    ) -> Self {
+        Self {
+            level,
+            public_key,
+            secret_key,
+        }
+    }
     /// Restore a `DsaKeyPair` from exported key data.
     pub fn into_keypair(self) -> Result<DsaKeyPair> {
         DsaKeyPair::from_bytes(self.level, &self.public_key, &self.secret_key)
@@ -68,35 +92,40 @@ impl DsaKeyData {
 
 // ── Encrypted key bundle ──────────────────────────────────────────────────────
 
-/// Serialisable form of an encrypted key bundle.
-/// Uses serde for robust JSON parsing — no hand-rolled string search.
+/// Versioned JSON bundle format — enables forward-compatible format changes.
 #[derive(Serialize, Deserialize, Debug)]
 struct BundleJson {
+    /// Bundle format version. Currently 1.
+    version: u8,
+    /// "kem" or "dsa"
     kind: String,
+    /// Security level: 1, 3, or 5
     level: u8,
+    /// Argon2id salt (16 bytes, hex-encoded)
     salt: String,
+    /// AES-GCM nonce (12 bytes, hex-encoded)
     nonce: String,
+    /// Encrypted key bytes (hex-encoded ciphertext + GCM tag)
     ciphertext: String,
 }
 
+const BUNDLE_VERSION: u8 = 1;
+
 /// AES-256-GCM encrypted key bundle safe to write to disk.
-///
-/// Key material is encrypted using a key derived from a passphrase via
-/// Argon2id (memory-hard KDF). The bundle includes the Argon2 salt and
-/// AES nonce — only the passphrase is secret.
-///
-/// Serialises to/from JSON via serde_json.
 ///
 /// # Argon2id parameters
 ///
-/// Memory: 64 MB, iterations: 3, parallelism: 1.
+/// Memory: 64 MB, iterations: 3, parallelism: 4.
 ///
-/// Parallelism is set to 1 for portability across single-core environments.
-/// This reduces offline attack resistance relative to the OWASP recommended
-/// p=4, because a single-threaded attacker benefits proportionally. The
-/// memory and iteration parameters still exceed OWASP minimums. For
-/// deployments where offline attack resistance is critical, increase p to 4
-/// and update the Params below.
+/// These meet OWASP recommendations (m=64MB, t=3, p=4). Parallelism is set
+/// to 4 following the OWASP default. Derivation takes approximately 0.5–1s
+/// on a modern machine, which is intentional — it raises the cost of
+/// offline dictionary attacks proportionally.
+///
+/// # Bundle format
+///
+/// JSON with a `version` field for forward compatibility. Version 1 uses
+/// AES-256-GCM + Argon2id with the parameters above.
 pub struct EncryptedKeyBundle {
     inner: BundleJson,
 }
@@ -109,6 +138,7 @@ impl EncryptedKeyBundle {
         let (salt, nonce, ct) = encrypt(&plaintext, passphrase)?;
         Ok(Self {
             inner: BundleJson {
+                version: BUNDLE_VERSION,
                 kind: "kem".into(),
                 level: level_to_u8(data.level),
                 salt,
@@ -125,6 +155,7 @@ impl EncryptedKeyBundle {
         let (salt, nonce, ct) = encrypt(&plaintext, passphrase)?;
         Ok(Self {
             inner: BundleJson {
+                version: BUNDLE_VERSION,
                 kind: "dsa".into(),
                 level: level_to_u8(data.level),
                 salt,
@@ -139,6 +170,12 @@ impl EncryptedKeyBundle {
         if self.inner.kind != "kem" {
             return Err(PqcError::Other("Bundle is not a KEM key".into()));
         }
+        if self.inner.version != BUNDLE_VERSION {
+            return Err(PqcError::Other(format!(
+                "Unsupported bundle version: {}. Expected {}.",
+                self.inner.version, BUNDLE_VERSION
+            )));
+        }
         let level = u8_to_level(self.inner.level)?;
         let plaintext = decrypt(&self.inner, passphrase)?;
         decode_kem_plaintext(level, &plaintext)?.into_keypair()
@@ -149,21 +186,40 @@ impl EncryptedKeyBundle {
         if self.inner.kind != "dsa" {
             return Err(PqcError::Other("Bundle is not a DSA key".into()));
         }
+        if self.inner.version != BUNDLE_VERSION {
+            return Err(PqcError::Other(format!(
+                "Unsupported bundle version: {}. Expected {}.",
+                self.inner.version, BUNDLE_VERSION
+            )));
+        }
         let level = u8_to_level(self.inner.level)?;
         let plaintext = decrypt(&self.inner, passphrase)?;
         decode_dsa_plaintext(level, &plaintext)?.into_keypair()
     }
 
-    /// Serialise to JSON string via serde_json.
+    /// Serialise to JSON string.
     pub fn to_json(&self) -> String {
         serde_json::to_string(&self.inner).expect("BundleJson is always serialisable")
     }
 
-    /// Deserialise from JSON string via serde_json.
+    /// Deserialise from JSON string.
     pub fn from_json(s: &str) -> Result<Self> {
         let inner: BundleJson = serde_json::from_str(s)
             .map_err(|e| PqcError::Other(format!("Invalid bundle JSON: {}", e)))?;
         Ok(Self { inner })
+    }
+
+    /// Returns the bundle format version.
+    pub fn version(&self) -> u8 {
+        self.inner.version
+    }
+    /// Returns the kind: "kem" or "dsa".
+    pub fn kind(&self) -> &str {
+        &self.inner.kind
+    }
+    /// Returns the security level.
+    pub fn level(&self) -> u8 {
+        self.inner.level
     }
 }
 
@@ -174,13 +230,11 @@ fn encrypt(plaintext: &Zeroizing<Vec<u8>>, passphrase: &[u8]) -> Result<(String,
     let mut nonce = [0u8; 12];
     rand::thread_rng().fill_bytes(&mut salt);
     rand::thread_rng().fill_bytes(&mut nonce);
-
     let aes_key = derive_key(passphrase, &salt)?;
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&aes_key));
     let ct = cipher
         .encrypt(Nonce::from_slice(&nonce), plaintext.as_slice())
         .map_err(|_| PqcError::Other("Encryption failed".into()))?;
-
     Ok((hex::encode(salt), hex::encode(nonce), hex::encode(ct)))
 }
 
@@ -191,7 +245,6 @@ fn decrypt(bundle: &BundleJson, passphrase: &[u8]) -> Result<Zeroizing<Vec<u8>>>
         hex::decode(&bundle.nonce).map_err(|_| PqcError::Other("Invalid nonce encoding".into()))?;
     let ct = hex::decode(&bundle.ciphertext)
         .map_err(|_| PqcError::Other("Invalid ciphertext encoding".into()))?;
-
     let aes_key = derive_key(passphrase, &salt)?;
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&aes_key));
     let plaintext = cipher
@@ -203,9 +256,9 @@ fn decrypt(bundle: &BundleJson, passphrase: &[u8]) -> Result<Zeroizing<Vec<u8>>>
 }
 
 fn derive_key(passphrase: &[u8], salt: &[u8]) -> Result<Zeroizing<Vec<u8>>> {
-    // Argon2id — OWASP-compliant parameters.
-    // p=1 for portability; see EncryptedKeyBundle doc comment for the tradeoff.
-    let params = Params::new(64 * 1024, 3, 1, Some(32))
+    // Argon2id — OWASP recommended parameters: m=64MB, t=3, p=4.
+    // See EncryptedKeyBundle doc comment for rationale.
+    let params = Params::new(64 * 1024, 3, 4, Some(32))
         .map_err(|_| PqcError::Other("Argon2 params error".into()))?;
     let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
     let mut key = Zeroizing::new(vec![0u8; 32]);
@@ -235,11 +288,11 @@ fn decode_kem_plaintext(level: SecurityLevel, data: &[u8]) -> Result<KemKeyData>
     if data.len() < 4 + pk_len {
         return Err(PqcError::Other("Truncated public key".into()));
     }
-    Ok(KemKeyData {
+    Ok(KemKeyData::new(
         level,
-        public_key: data[4..4 + pk_len].to_vec(),
-        secret_key: Zeroizing::new(data[4 + pk_len..].to_vec()),
-    })
+        data[4..4 + pk_len].to_vec(),
+        Zeroizing::new(data[4 + pk_len..].to_vec()),
+    ))
 }
 
 fn encode_dsa_plaintext(data: &DsaKeyData) -> Zeroizing<Vec<u8>> {
@@ -260,11 +313,11 @@ fn decode_dsa_plaintext(level: SecurityLevel, data: &[u8]) -> Result<DsaKeyData>
     if data.len() < 4 + pk_len {
         return Err(PqcError::Other("Truncated public key".into()));
     }
-    Ok(DsaKeyData {
+    Ok(DsaKeyData::new(
         level,
-        public_key: data[4..4 + pk_len].to_vec(),
-        secret_key: Zeroizing::new(data[4 + pk_len..].to_vec()),
-    })
+        data[4..4 + pk_len].to_vec(),
+        Zeroizing::new(data[4 + pk_len..].to_vec()),
+    ))
 }
 
 // ── Level conversions ─────────────────────────────────────────────────────────
@@ -320,6 +373,8 @@ mod tests {
         let kp = KemKeyPair::generate(SecurityLevel::Level3).unwrap();
         let orig_pub = kp.public_key();
         let bundle = EncryptedKeyBundle::seal_kem(&kp, b"test-passphrase-123").unwrap();
+        assert_eq!(bundle.version(), 1);
+        assert_eq!(bundle.kind(), "kem");
         let json = bundle.to_json();
         let restored = EncryptedKeyBundle::from_json(&json)
             .unwrap()
@@ -372,16 +427,28 @@ mod tests {
     }
 
     #[test]
-    fn test_serde_json_roundtrip() {
-        // Ensure serde_json serialisation is symmetric
+    fn test_bundle_has_version_field() {
         let kp = KemKeyPair::generate(SecurityLevel::Level3).unwrap();
-        let bundle = EncryptedKeyBundle::seal_kem(&kp, b"serde-test").unwrap();
+        let bundle = EncryptedKeyBundle::seal_kem(&kp, b"version-test").unwrap();
         let json = bundle.to_json();
-        // Verify it's valid JSON by parsing it again
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["version"], 1, "Bundle must include version field");
         assert!(parsed.get("kind").is_some());
         assert!(parsed.get("salt").is_some());
         assert!(parsed.get("nonce").is_some());
         assert!(parsed.get("ciphertext").is_some());
+    }
+
+    #[test]
+    fn test_wrong_bundle_kind_rejected() {
+        let kp = KemKeyPair::generate(SecurityLevel::Level3).unwrap();
+        let bundle = EncryptedKeyBundle::seal_kem(&kp, b"kind-test").unwrap();
+        assert!(
+            EncryptedKeyBundle::from_json(&bundle.to_json())
+                .unwrap()
+                .unseal_dsa(b"kind-test")
+                .is_err(),
+            "KEM bundle must be rejected by unseal_dsa"
+        );
     }
 }

@@ -377,11 +377,11 @@ impl DsaKeyPair {
     /// Export the key pair as raw bytes wrapped in `DsaKeyData`.
     /// Use `EncryptedKeyBundle::seal_dsa()` to persist securely to disk.
     pub fn export(&self) -> crate::Result<crate::serial::DsaKeyData> {
-        Ok(crate::serial::DsaKeyData {
-            level: self.inner.level,
-            public_key: self.inner.pk_bytes.clone(),
-            secret_key: self.inner.sk_bytes.clone(),
-        })
+        Ok(crate::serial::DsaKeyData::new(
+            self.inner.level,
+            self.inner.pk_bytes.clone(),
+            self.inner.sk_bytes.clone(),
+        ))
     }
 
     /// Restore a key pair from raw exported bytes.
@@ -441,8 +441,34 @@ impl DsaKeyPair {
 }
 
 impl DsaPublicKey {
-    /// Construct from raw bytes and level — used by PEM/serialisation layer.
-    pub fn from_raw(level: SecurityLevel, bytes: Vec<u8>) -> Self {
+    /// Construct from raw bytes — for internal use by serialisation layer only.
+    /// Does NOT validate through pqcrypto. Callers must ensure bytes are valid.
+    pub(crate) fn from_raw(level: SecurityLevel, bytes: Vec<u8>) -> Self {
         DsaPublicKey { level, bytes }
+    }
+
+    /// Construct from bytes with pqcrypto validation.
+    /// Rejects wrong lengths and structurally invalid keys.
+    /// Used by PEM decode and any external input path.
+    pub fn from_validated(level: SecurityLevel, bytes: Vec<u8>) -> crate::Result<Self> {
+        use pqcrypto_traits::sign::PublicKey;
+        match level {
+            SecurityLevel::Level1 => dilithium2::PublicKey::from_bytes(&bytes)
+                .map_err(|_| {
+                    crate::error::PqcError::InvalidKey("Invalid Dilithium2 public key".into())
+                })
+                .map(|_| ())?,
+            SecurityLevel::Level3 => dilithium3::PublicKey::from_bytes(&bytes)
+                .map_err(|_| {
+                    crate::error::PqcError::InvalidKey("Invalid Dilithium3 public key".into())
+                })
+                .map(|_| ())?,
+            SecurityLevel::Level5 => dilithium5::PublicKey::from_bytes(&bytes)
+                .map_err(|_| {
+                    crate::error::PqcError::InvalidKey("Invalid Dilithium5 public key".into())
+                })
+                .map(|_| ())?,
+        };
+        Ok(DsaPublicKey { level, bytes })
     }
 }
