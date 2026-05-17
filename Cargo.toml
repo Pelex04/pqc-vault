@@ -1,6 +1,6 @@
 [package]
 name = "pqc_vault"
-version = "0.9.0"
+version = "0.13.0"
 edition = "2021"
 authors = ["PQC Vault Contributors"]
 description = "Post-quantum cryptography API — ML-KEM (Kyber) + ML-DSA (Dilithium) — NIST FIPS 203/204"
@@ -23,6 +23,10 @@ sha2               = "0.10"
 hkdf               = "0.12"
 serde              = { version = "1", features = ["derive"] }
 serde_json         = "1"
+clap               = { version = "4", features = ["derive"] }
+rpassword          = "7"
+
+# CLI dependencies
 
 [dev-dependencies]
 criterion = { version = "0.4", features = ["html_reports"] }
@@ -30,6 +34,10 @@ criterion = { version = "0.4", features = ["html_reports"] }
 [[bench]]
 name = "pqc_benchmarks"
 harness = false
+
+[[bin]]
+name = "pqc-vault"
+path = "src/bin/pqc-vault.rs"
 
 [profile.release]
 opt-level     = 3
